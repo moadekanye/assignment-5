@@ -1,0 +1,115 @@
+import pandas as pd
+
+# Load the dataset
+df = pd.read_csv('path_to/players_stats_by_season_full_details.csv')
+
+# Filter dataset for Regular Season NBA games only
+regular_season_df = df[(df['League'] == 'NBA') & (df['Stage'] == 'Regular_Season')]
+# Identify the player with the most regular seasons played
+seasons_per_player = regular_season_df.groupby('Player')['Season'].nunique().reset_index(name='Seasons_Played')
+most_regular_seasons_player = seasons_per_player.sort_values(by='Seasons_Played', ascending=False).iloc[0]['Player']
+
+print(f"Player with the most regular seasons: {most_regular_seasons_player}")
+# Filter data for the player with most regular seasons (e.g. Vince Carter)
+player_df = regular_season_df[regular_season_df['Player'] == most_regular_seasons_player].copy()
+
+# Ensure that 3-point attempts (3PA) are non-zero to avoid division errors
+player_df = player_df[player_df['3PA'] > 0]
+
+# Calculate 3-point accuracy (3PM / 3PA) for each season
+player_df['3P_accuracy'] = player_df['3PM'] / player_df['3PA']
+
+print(player_df[['Season', '3P_accuracy']])
+import matplotlib.pyplot as plt
+from sklearn.linear_model import LinearRegression
+import numpy as np
+
+# Convert 'Season' column to numeric values (take the first year of the season)
+player_df['Season_numeric'] = player_df['Season'].apply(lambda x: int(x.split(' - ')[0]))
+
+# Prepare data for regression
+X = player_df['Season_numeric'].values.reshape(-1, 1)
+y = player_df['3P_accuracy'].values
+
+# Perform linear regression
+reg = LinearRegression().fit(X, y)
+y_pred = reg.predict(X)
+
+
+ from scipy.stats import skew, kurtosis
+
+# Calculate statistics for Field Goals Made (FGM) and Field Goals Attempted (FGA)
+fgm_stats = {
+    'mean': regular_season_df['FGM'].mean(),
+    'variance': regular_season_df['FGM'].var(),
+    'skew': skew(regular_season_df['FGM']),
+    'kurtosis': kurtosis(regular_season_df['FGM'])
+}
+
+fga_stats = {
+    'mean': regular_season_df['FGA'].mean(),
+    'variance': regular_season_df['FGA'].var(),
+    'skew': skew(regular_season_df['FGA']),
+    'kurtosis': kurtosis(regular_season_df['FGA'])
+}
+
+print(f"FGM Statistics: {fgm_stats}")
+print(f"FGA Statistics: {fga_stats}")
+from scipy.stats import ttest_rel
+
+# Perform relational t-test between FGM and FGA
+t_stat_rel, p_value_rel = ttest_rel(regular_season_df['FGM'], regular_season_df['FGA'])
+
+print(f"Relational t-test: t-statistic = {t_stat_rel}, p-value = {p_value_rel}")
+from scipy.stats import ttest_1samp
+
+# Perform regular t-test on FGM (comparing to 0)
+t_stat_fgm, p_value_fgm = ttest_1samp(regular_season_df['FGM'], 0)
+
+# Perform regular t-test on FGA (comparing to 0)
+t_stat_fga, p_value_fga = ttest_1samp(regular_season_df['FGA'], 0)
+
+print(f"Regular t-test for FGM: t-statistic = {t_stat_fgm}, p-value = {p_value_fgm}")
+print(f"Regular t-test for FGA: t-statistic = {t_stat_fga}, p-value = {p_value_fga}")
+
+# Plot the results
+plt.scatter(X, y, color='blue', label='Actual Accuracy')
+plt.plot(X, y_pred, color='red', label='Best Fit Line')
+plt.xlabel('Season (Year)')
+plt.ylabel('3-Point Accuracy')
+plt.title(f'{most_regular_seasons_player} 3-Point Accuracy Over the Years')
+plt.legend()
+plt.show()
+from scipy.integrate import quad
+
+# Define the regression line equation
+def regression_line(x):
+    return reg.coef_[0] * x + reg.intercept_
+
+# Perform integration over the years played
+start_year = player_df['Season_numeric'].min()
+end_year = player_df['Season_numeric'].max()
+
+# Calculate the integral of the best fit line between start and end years
+area, _ = quad(regression_line, start_year, end_year)
+
+# Average 3-point accuracy over the years (integral divided by the number of years)
+average_3P_accuracy_fit = area / (end_year - start_year)
+
+# Compare this to the actual average 3-point accuracy
+actual_average_3P_accuracy = player_df['3P_accuracy'].mean()
+
+print(f"Average 3P accuracy from regression: {average_3P_accuracy_fit}")
+print(f"Actual average 3P accuracy: {actual_average_3P_accuracy}")
+# Create a complete range of seasons (including missing ones)
+full_seasons_range = pd.Series(range(start_year, end_year + 1))
+
+# Merge with player data to identify missing seasons
+full_player_df = pd.DataFrame({'Season_numeric': full_seasons_range})
+merged_df = full_player_df.merge(player_df[['Season_numeric', '3P_accuracy']], on='Season_numeric', how='left')
+
+# Interpolate missing values (for 2002-2003 and 2015-2016)
+merged_df['3P_accuracy_interpolated'] = merged_df['3P_accuracy'].interpolate()
+
+# Check the interpolated data
+print(merged_df[merged_df['Season_numeric'].isin([2002, 2015])])
